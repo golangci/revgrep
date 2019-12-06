@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/golangci/revgrep"
+	"github.com/corverroos/revgrep"
 )
 
 func main() {
