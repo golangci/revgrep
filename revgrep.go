@@ -276,18 +276,24 @@ func (c *Checker) linesChanged() map[string][]pos {
 
 	var scanErr error
 
+	// continued is true while reading the remaining chunks of a line that overflowed the buffer.
+	continued := false
+
 	for {
 		lineB, isPrefix, err := scanner.ReadLine()
-		if isPrefix {
-			// If a single line overflowed the buffer, don't bother processing it as
-			// it's likey part of a file and not relevant to the patch.
-			continue
-		}
-
 		if err != nil {
 			scanErr = err
 			break
 		}
+
+		if continued {
+			// Only the first chunk of a line says what kind of patch line it is:
+			// the following chunks are file content, never patch syntax.
+			continued = isPrefix
+			continue
+		}
+
+		continued = isPrefix
 
 		line := strings.TrimRight(string(lineB), "\n")
 
@@ -302,8 +308,13 @@ func (c *Checker) linesChanged() map[string][]pos {
 				// record the last state
 				changes[s.file] = s.changes
 			}
-			// 6 removes "+++ b/"
-			s = state{file: line[6:], hunkPos: -1, changes: []pos{}}
+			// Removes "+++ " and the one-letter prefix ("b/", or "w/" and friends with diff.mnemonicPrefix), when there is one.
+			file := line[4:]
+			if len(file) > 2 && file[1] == '/' {
+				file = file[2:]
+			}
+
+			s = state{file: file, hunkPos: -1, changes: []pos{}}
 
 		case strings.HasPrefix(line, "@@ "):
 			//      @@ -1 +2,4 @@

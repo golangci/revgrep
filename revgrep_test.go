@@ -281,6 +281,68 @@ func TestChecker_linesChanged(t *testing.T) {
 	}
 }
 
+func TestChecker_linesChanged_longLine(t *testing.T) {
+	// ReadLine returns a line longer than its buffer in chunks: the tail of a long context line
+	// must not be read as a removed line, an added line or a hunk header.
+	for _, tail := range []string{"-y", "+y", "@@ y"} {
+		diff := "--- a/file.go\n+++ b/file.go\n@@ -1,3 +1,4 @@\n a\n b\n " +
+			strings.Repeat("x", 4095) + tail + "\n+func NewLine() {}\n"
+
+		checker := Checker{
+			Patch: strings.NewReader(diff),
+		}
+
+		have := checker.linesChanged()
+
+		want := map[string][]pos{
+			"file.go": {
+				{lineNo: 4, hunkPos: 4},
+			},
+		}
+
+		if !reflect.DeepEqual(have, want) {
+			t.Errorf("tail %q: unexpected pos:\nhave: %#v\nwant: %#v", tail, have, want)
+		}
+	}
+}
+
+func TestChecker_linesChanged_longAddedLine(t *testing.T) {
+	diff := "--- a/file.go\n+++ b/file.go\n@@ -1,1 +1,2 @@\n a\n+" + strings.Repeat("x", 5000) + "\n"
+
+	checker := Checker{
+		Patch: strings.NewReader(diff),
+	}
+
+	have := checker.linesChanged()
+
+	want := map[string][]pos{
+		"file.go": {
+			{lineNo: 2, hunkPos: 2},
+		},
+	}
+
+	if !reflect.DeepEqual(have, want) {
+		t.Errorf("unexpected pos:\nhave: %#v\nwant: %#v", have, want)
+	}
+}
+
+func TestChecker_linesChanged_noPrefix(t *testing.T) {
+	// "git diff --no-prefix" writes the file name without "a/" and "b/".
+	for name, want := range map[string]string{"a": "a", "x.go": "x.go", "b/file.go": "file.go", "w/file.go": "file.go"} {
+		diff := "--- " + name + "\n+++ " + name + "\n@@ -1 +1 @@\n+x\n"
+
+		checker := Checker{
+			Patch: strings.NewReader(diff),
+		}
+
+		have := checker.linesChanged()
+
+		if _, ok := have[want]; !ok || len(have) != 1 {
+			t.Errorf("%q: unexpected files: %#v, want %q", name, have, want)
+		}
+	}
+}
+
 func rewriteAbs(t *testing.T, line string) string {
 	t.Helper()
 
